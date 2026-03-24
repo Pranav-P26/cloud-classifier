@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CloudEye — Cloud Species Classifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sky-deep: #0a1628;
+    --sky-mid: #1a2d4e;
+    --sky-light: #2a4a7a;
+    --cloud-white: #f0f4ff;
+    --cloud-silver: #c8d4e8;
+    --gold: #e8c87a;
+    --gold-dim: #a08840;
+    --accent: #7bb8e8;
+    --accent-glow: rgba(123, 184, 232, 0.3);
+    --mist: rgba(240, 244, 255, 0.06);
+    --danger: #e87a7a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--sky-deep);
+    color: var(--cloud-white);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Atmospheric background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(42, 74, 122, 0.6) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(26, 45, 78, 0.8) 0%, transparent 50%),
+      radial-gradient(ellipse 40% 30% at 10% 80%, rgba(123, 184, 232, 0.08) 0%, transparent 40%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Star field */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 15%, rgba(255,255,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 75% 8%, rgba(255,255,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 45% 25%, rgba(255,255,255,0.2) 0%, transparent 100%),
+      radial-gradient(1px 1px at 85% 35%, rgba(255,255,255,0.35) 0%, transparent 100%),
+      radial-gradient(1px 1px at 5% 45%, rgba(255,255,255,0.25) 0%, transparent 100%),
+      radial-gradient(1px 1px at 60% 12%, rgba(255,255,255,0.2) 0%, transparent 100%),
+      radial-gradient(1px 1px at 30% 5%, rgba(255,255,255,0.3) 0%, transparent 100%),
+      radial-gradient(1.5px 1.5px at 92% 20%, rgba(255,255,255,0.4) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    margin-bottom: 60px;
+    position: relative;
+  }
+
+  .eyeglass {
+    font-size: 48px;
+    display: block;
+    margin-bottom: 16px;
+    animation: float 4s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.8rem, 7vw, 4.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    background: linear-gradient(135deg, var(--cloud-white) 30%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 1rem;
+    color: var(--cloud-silver);
+    letter-spacing: 0.05em;
+    margin-bottom: 24px;
+  }
+
+  .genus-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+  }
+
+  .genus-chip {
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border: 1px solid rgba(123, 184, 232, 0.25);
+    border-radius: 20px;
+    color: var(--accent);
+    background: rgba(123, 184, 232, 0.06);
+  }
+
+  /* Main layout */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 640px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Camera panel */
+  .camera-panel {
+    background: var(--mist);
+    border: 1px solid rgba(123, 184, 232, 0.15);
+    border-radius: 16px;
+    padding: 24px;
+    backdrop-filter: blur(10px);
+  }
+
+  .camera-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .camera-label::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: var(--gold);
+    border-radius: 50%;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  #webcam-container {
+    width: 100%;
+    aspect-ratio: 1;
+    background: rgba(10, 22, 40, 0.8);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(123, 184, 232, 0.1);
+    position: relative;
+  }
+
+  #webcam-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+    border-radius: 12px;
+  }
+
+  .cam-placeholder {
+    text-align: center;
+    color: var(--cloud-silver);
+    opacity: 0.5;
+  }
+
+  .cam-placeholder .icon {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: 12px;
+  }
+
+  .cam-placeholder p {
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+
+  /* Scan line animation when active */
+  #webcam-container.active::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scanline 3s linear infinite;
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  @keyframes scanline {
+    0% { top: 0; }
+    100% { top: 100%; }
+  }
+
+  /* Corner decorations */
+  .cam-corners {
+    position: absolute;
+    inset: 8px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+
+  #webcam-container.active .cam-corners { opacity: 1; }
+
+  .cam-corners::before,
+  .cam-corners::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: var(--accent);
+    border-style: solid;
+  }
+
+  .cam-corners::before {
+    top: 0; left: 0;
+    border-width: 2px 0 0 2px;
+  }
+
+  .cam-corners::after {
+    bottom: 0; right: 0;
+    border-width: 0 2px 2px 0;
+  }
+
+  /* Start button */
+  .start-btn {
+    width: 100%;
+    margin-top: 16px;
+    padding: 14px 24px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--accent);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .start-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+    z-index: -1;
+  }
+
+  .start-btn:hover::before { transform: scaleX(1); }
+  .start-btn:hover { color: var(--sky-deep); }
+
+  .start-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .start-btn:disabled::before { display: none; }
+
+  /* Results panel */
+  .results-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .results-header {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .confidence-label {
+    color: var(--cloud-silver);
+    opacity: 0.6;
+  }
+
+  /* Top prediction hero */
+  .top-prediction {
+    background: rgba(123, 184, 232, 0.06);
+    border: 1px solid rgba(123, 184, 232, 0.2);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.4s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .top-prediction.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 30px rgba(123, 184, 232, 0.15);
+  }
+
+  .top-prediction::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(123, 184, 232, 0.05) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cloud-icon {
+    font-size: 2.5rem;
+    margin-bottom: 8px;
+    display: block;
+    filter: drop-shadow(0 0 12px rgba(123, 184, 232, 0.5));
+  }
+
+  .cloud-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--cloud-white);
+    margin-bottom: 4px;
+  }
+
+  .cloud-code {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  .idle-text {
+    font-size: 0.8rem;
+    color: var(--cloud-silver);
+    opacity: 0.5;
+    font-style: italic;
+    font-family: 'Playfair Display', serif;
+  }
+
+  /* Probability bars */
+  .prob-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .prob-item {
+    position: relative;
+  }
+
+  .prob-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 5px;
+  }
+
+  .prob-name {
+    font-size: 0.72rem;
+    color: var(--cloud-silver);
+    letter-spacing: 0.04em;
+  }
+
+  .prob-pct {
+    font-size: 0.68rem;
+    color: var(--accent);
+    font-weight: 500;
+    min-width: 38px;
+    text-align: right;
+  }
+
+  .prob-bar-track {
+    height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .prob-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--sky-light), var(--accent));
+    width: 0%;
+    transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .prob-item.top-class .prob-name { color: var(--cloud-white); }
+  .prob-item.top-class .prob-bar-fill {
+    background: linear-gradient(90deg, var(--accent), var(--cloud-white));
+    box-shadow: 0 0 8px rgba(123, 184, 232, 0.4);
+  }
+
+  /* Cloud info card */
+  .info-card {
+    background: var(--mist);
+    border: 1px solid rgba(232, 200, 122, 0.15);
+    border-radius: 12px;
+    padding: 16px;
+    display: none;
+  }
+
+  .info-card.visible { display: block; }
+
+  .info-card-title {
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 8px;
+  }
+
+  .info-card-text {
+    font-size: 0.75rem;
+    line-height: 1.7;
+    color: var(--cloud-silver);
+  }
+
+  .info-card-text strong {
+    color: var(--cloud-white);
+    font-weight: 500;
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 60px;
+    text-align: center;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: var(--cloud-silver);
+    opacity: 0.3;
+  }
+
+  /* Status badge */
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cloud-silver);
+    opacity: 0.5;
+    margin-top: 16px;
+  }
+
+  .status-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--cloud-silver);
+  }
+
+  .status-badge.running .status-dot {
+    background: #7ee87a;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+
+  .status-badge.running { color: #7ee87a; opacity: 1; }
+
+  /* Loading spinner */
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(123, 184, 232, 0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: none;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Mode tabs */
+  .mode-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border: 1px solid rgba(123, 184, 232, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .mode-tab {
+    flex: 1;
+    padding: 9px 12px;
+    background: transparent;
+    border: none;
+    color: var(--cloud-silver);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    opacity: 0.5;
+  }
+
+  .mode-tab.active {
+    background: rgba(123, 184, 232, 0.12);
+    color: var(--accent);
+    opacity: 1;
+  }
+
+  .mode-tab:first-child { border-right: 1px solid rgba(123, 184, 232, 0.2); }
+
+  /* Drop zone */
+  .drop-zone {
+    width: 100%;
+    aspect-ratio: 1;
+    background: rgba(10, 22, 40, 0.8);
+    border-radius: 12px;
+    border: 1.5px dashed rgba(123, 184, 232, 0.25);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(123, 184, 232, 0.05);
+  }
+
+  .drop-zone .dz-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+    opacity: 0.5;
+    transition: all 0.3s;
+  }
+
+  .drop-zone:hover .dz-icon, .drop-zone.dragover .dz-icon {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  .drop-zone .dz-text {
+    font-size: 0.72rem;
+    color: var(--cloud-silver);
+    opacity: 0.6;
+    text-align: center;
+    line-height: 1.7;
+  }
+
+  .drop-zone .dz-hint {
+    font-size: 0.62rem;
+    color: var(--accent);
+    margin-top: 8px;
+    opacity: 0.6;
+    letter-spacing: 0.1em;
+  }
+
+  /* Preview image inside drop zone */
+  .drop-zone img.preview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 12px;
+  }
+
+  .drop-zone .preview-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 22, 40, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    color: var(--cloud-white);
+    text-transform: uppercase;
+  }
+
+  .drop-zone:hover .preview-overlay { opacity: 1; }
+
+  #fileInput { display: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <span class="eyeglass">🔭</span>
+    <h1>CloudEye</h1>
+    <p class="subtitle">Real-time cloud species classification</p>
+    <div class="genus-chips">
+      <span class="genus-chip">Cirrus</span>
+      <span class="genus-chip">Cirrocumulus</span>
+      <span class="genus-chip">Cirrostratus</span>
+      <span class="genus-chip">Altocumulus</span>
+      <span class="genus-chip">Altostratus</span>
+      <span class="genus-chip">Nimbostratus</span>
+    </div>
+  </header>
+
+  <div class="main-grid">
+    <!-- Camera Panel -->
+    <div class="camera-panel">
+      <!-- Mode tabs -->
+      <div class="mode-tabs">
+        <button class="mode-tab active" id="tabWebcam" onclick="switchMode('webcam')">📷 &nbsp;Webcam</button>
+        <button class="mode-tab" id="tabFile" onclick="switchMode('file')">🖼 &nbsp;Upload Image</button>
+      </div>
+
+      <!-- Webcam view -->
+      <div id="webcamView">
+        <div class="camera-label">Live feed</div>
+        <div id="webcam-container">
+          <div class="cam-corners"></div>
+          <div class="cam-placeholder" id="placeholder">
+            <span class="icon">☁️</span>
+            <p>Point your camera<br>at the sky to begin</p>
+          </div>
+        </div>
+        <button class="start-btn" id="startBtn" onclick="init()">
+          ◉ &nbsp; Activate Classifier
+        </button>
+        <div style="text-align:center">
+          <div class="status-badge" id="statusBadge">
+            <div class="status-dot"></div>
+            <span id="statusText">Offline</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- File upload view -->
+      <div id="fileView" style="display:none">
+        <div class="camera-label">Image input</div>
+        <input type="file" id="fileInput" accept="image/*">
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <span class="dz-icon">🌤</span>
+          <div class="dz-text">Drop a cloud photo here<br>or click to browse</div>
+          <div class="dz-hint">JPG · PNG · WEBP</div>
+        </div>
+        <button class="start-btn" id="classifyBtn" onclick="classifyImage()" style="margin-top:16px; display:none">
+          ◉ &nbsp; Classify Image
+        </button>
+      </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="results-panel">
+      <!-- Top Prediction -->
+      <div class="top-prediction" id="topPrediction">
+        <div class="idle-text">Awaiting observation…</div>
+      </div>
+
+      <!-- Probability Bars -->
+      <div>
+        <div class="results-header">
+          <span>Classification</span>
+          <span class="confidence-label">Confidence</span>
+        </div>
+      </div>
+      <div class="prob-list" id="label-container"></div>
+
+      <!-- Info Card -->
+      <div class="info-card" id="infoCard">
+        <div class="info-card-title">Field notes</div>
+        <div class="info-card-text" id="infoText"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Powered by TensorFlow.js · Teachable Machine · Cloud Atlas Classification</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+<script>
+  const MODEL_BASE = "./";
+  let model, webcam, maxPredictions;
+  let isRunning = false;
+  let currentMode = 'webcam'; // 'webcam' | 'file'
+  let uploadedImage = null;
+
+  const CLOUD_INFO = {
+    "Cirrus (Ci)": {
+      icon: "🌤",
+      notes: "<strong>Altitude:</strong> 6,000–12,000 m (high level). Thin, wispy, ice-crystal filaments. Often herald an approaching warm front 12–24 hours away. Fair weather in the short term."
+    },
+    "Cirrocumulus (Cc)": {
+      icon: "🌥",
+      notes: "<strong>Altitude:</strong> 6,000–12,000 m (high level). Small, white puffs arranged in rows — the classic 'mackerel sky'. Composed entirely of supercooled water droplets or ice crystals."
+    },
+    "Cirrostratus (Cs)": {
+      icon: "⛅",
+      notes: "<strong>Altitude:</strong> 6,000–12,000 m. A transparent, whitish veil across the sky, often producing halos around the sun or moon. Precipitation likely within 12–24 hours."
+    },
+    "Altocumulus (Ac)": {
+      icon: "🌦",
+      notes: "<strong>Altitude:</strong> 2,000–6,000 m (mid level). Gray or white layered patches, often with a wavy appearance. When seen on a warm, humid morning, afternoon thunderstorms may follow."
+    },
+    "Altostratus (As)": {
+      icon: "🌫",
+      notes: "<strong>Altitude:</strong> 2,000–6,000 m (mid level). A uniform gray or blue-gray sheet covering the sky. The sun appears as if through frosted glass. Light precipitation likely."
+    },
+    "Nimbostratus (Ns)": {
+      icon: "🌧",
+      notes: "<strong>Altitude:</strong> 900–3,000 m (multi-level). Dark, thick, featureless rain cloud. Responsible for continuous, prolonged precipitation. Expect rain or snow — bring an umbrella."
+    }
+  };
+
+  const LABELS = [
+    "Cirrus (Ci)", "Cirrocumulus (Cc)", "Cirrostratus (Cs)",
+    "Altocumulus (Ac)", "Altostratus (As)", "Nimbostratus (Ns)"
+  ];
+
+  // Build probability bar rows upfront
+  const labelContainer = document.getElementById("label-container");
+  LABELS.forEach(label => {
+    const item = document.createElement("div");
+    item.className = "prob-item";
+    item.innerHTML = `
+      <div class="prob-header">
+        <span class="prob-name">${label}</span>
+        <span class="prob-pct" id="pct-${labelKey(label)}">—</span>
+      </div>
+      <div class="prob-bar-track">
+        <div class="prob-bar-fill" id="bar-${labelKey(label)}"></div>
+      </div>
+    `;
+    labelContainer.appendChild(item);
+  });
+
+  function labelKey(label) {
+    return label.replace(/[()]/g, '').replace(/\s/g, '-');
+  }
+
+  // ── Mode switching ──────────────────────────────────────────
+  function switchMode(mode) {
+    currentMode = mode;
+    document.getElementById('tabWebcam').classList.toggle('active', mode === 'webcam');
+    document.getElementById('tabFile').classList.toggle('active', mode === 'file');
+    document.getElementById('webcamView').style.display = mode === 'webcam' ? '' : 'none';
+    document.getElementById('fileView').style.display = mode === 'file' ? '' : 'none';
+
+    // Stop webcam if switching away
+    if (mode === 'file' && isRunning) {
+      isRunning = false;
+      webcam?.stop();
+    }
+
+    // Reset results when switching
+    resetResults();
+  }
+
+  function resetResults() {
+    const topEl = document.getElementById("topPrediction");
+    topEl.classList.remove("active");
+    topEl.innerHTML = `<div class="idle-text">Awaiting observation…</div>`;
+    document.getElementById("infoCard").classList.remove("visible");
+    LABELS.forEach(label => {
+      const key = labelKey(label);
+      const pctEl = document.getElementById(`pct-${key}`);
+      const barEl = document.getElementById(`bar-${key}`);
+      if (pctEl) pctEl.textContent = "—";
+      if (barEl) barEl.style.width = "0%";
+      barEl?.closest('.prob-item')?.classList.remove('top-class');
+    });
+  }
+
+  // ── Model loader (shared) ──────────────────────────────────
+  async function ensureModelLoaded() {
+    if (model) return true;
+    try {
+      model = await tmImage.loadFromFiles(
+        new File([await (await fetch('./model.json')).blob()], 'model.json', {type: 'application/json'}),
+        new File([await (await fetch('./weights.bin')).blob()], 'weights.bin', {type: 'application/octet-stream'}),
+        new File([await (await fetch('./metadata.json')).blob()], 'metadata.json', {type: 'application/json'})
+      );
+    } catch (e) {
+      try {
+        model = await tmImage.load(MODEL_BASE + "model.json", MODEL_BASE + "metadata.json");
+      } catch (e2) {
+        alert("Could not load model. Ensure model.json, weights.bin, and metadata.json are in the same folder as this HTML file.");
+        return false;
+      }
+    }
+    maxPredictions = model.getTotalClasses();
+    return true;
+  }
+
+  // ── Webcam mode ───────────────────────────────────────────
+  async function init() {
+    const btn = document.getElementById("startBtn");
+    btn.disabled = true;
+    btn.textContent = "⟳  Loading model…";
+
+    if (!await ensureModelLoaded()) {
+      btn.disabled = false;
+      btn.textContent = "◉  Activate Classifier";
+      return;
+    }
+
+    const flip = true;
+    webcam = new tmImage.Webcam(400, 400, flip);
+    await webcam.setup();
+    await webcam.play();
+
+    const container = document.getElementById("webcam-container");
+    const ph = document.getElementById("placeholder");
+    if (ph) ph.remove();
+    container.appendChild(webcam.canvas);
+    container.classList.add("active");
+
+    isRunning = true;
+    btn.textContent = "◉  Running";
+    btn.style.borderColor = "#7ee87a";
+    btn.style.color = "#7ee87a";
+
+    const badge = document.getElementById("statusBadge");
+    badge.classList.add("running");
+    document.getElementById("statusText").textContent = "Live";
+
+    window.requestAnimationFrame(loop);
+  }
+
+  async function loop() {
+    if (!isRunning) return;
+    webcam.update();
+    await predictFrom(webcam.canvas);
+    window.requestAnimationFrame(loop);
+  }
+
+  // ── File / image mode ─────────────────────────────────────
+  const dropZone = document.getElementById("dropZone");
+  const fileInput = document.getElementById("fileInput");
+
+  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("image/")) handleImageFile(file);
+  });
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (file) handleImageFile(file);
+  });
+
+  function handleImageFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const src = e.target.result;
+      uploadedImage = new Image();
+      uploadedImage.onload = () => {
+        // Show preview in drop zone
+        dropZone.innerHTML = `
+          <img class="preview" src="${src}" alt="Preview">
+          <div class="preview-overlay">Click to change image</div>
+        `;
+        dropZone.onclick = () => fileInput.click();
+        document.getElementById("classifyBtn").style.display = "";
+        resetResults();
+      };
+      uploadedImage.src = src;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function classifyImage() {
+    if (!uploadedImage) return;
+    const btn = document.getElementById("classifyBtn");
+    btn.disabled = true;
+    btn.textContent = "⟳  Analysing…";
+
+    if (!await ensureModelLoaded()) {
+      btn.disabled = false;
+      btn.textContent = "◉  Classify Image";
+      return;
+    }
+
+    await predictFrom(uploadedImage);
+
+    btn.disabled = false;
+    btn.textContent = "◉  Classify Again";
+  }
+
+  // ── Shared prediction renderer ────────────────────────────
+  async function predictFrom(source) {
+    const prediction = await model.predict(source);
+    const sorted = [...prediction].sort((a, b) => b.probability - a.probability);
+    const top = sorted[0];
+
+    const topEl = document.getElementById("topPrediction");
+    const info = CLOUD_INFO[top.className];
+    if (top.probability > 0.15 && info) {
+      topEl.classList.add("active");
+      topEl.innerHTML = `
+        <span class="cloud-icon">${info.icon}</span>
+        <div class="cloud-name">${top.className.split('(')[0].trim()}</div>
+        <div class="cloud-code">${top.className.match(/\(([^)]+)\)/)?.[1] || ''} · ${(top.probability * 100).toFixed(1)}% confidence</div>
+      `;
+      document.getElementById("infoText").innerHTML = info.notes;
+      document.getElementById("infoCard").classList.add("visible");
+    } else {
+      topEl.classList.remove("active");
+      topEl.innerHTML = `<div class="idle-text">Low confidence — try a clearer sky photo.</div>`;
+    }
+
+    prediction.forEach(p => {
+      const key = labelKey(p.className);
+      const pctEl = document.getElementById(`pct-${key}`);
+      const barEl = document.getElementById(`bar-${key}`);
+      if (pctEl) pctEl.textContent = (p.probability * 100).toFixed(1) + "%";
+      if (barEl) barEl.style.width = (p.probability * 100) + "%";
+      const item = barEl?.closest('.prob-item');
+      if (item) item.classList.toggle('top-class', p.className === top.className && top.probability > 0.15);
+    });
+  }
+</script>
+</body>
+</html>
